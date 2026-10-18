@@ -1,0 +1,2 @@
+# 每天 20:00 自动采集（crontab -e 粘贴）
+0 20 * * * cd /opt/yanxun && /opt/yanxun/.venv/bin/python scripts/monitor_once.py >> data/cron.log 2>&1

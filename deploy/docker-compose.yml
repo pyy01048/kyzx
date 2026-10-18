@@ -1,0 +1,24 @@
+services:
+  yanxun:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: yanxun:latest
+    container_name: yanxun
+    restart: unless-stopped
+    ports:
+      - "${YANXUN_PORT:-8000}:8000"
+    environment:
+      TZ: Asia/Shanghai
+      YANXUN_DATA: /app/data
+      YANXUN_YEARS: "2027,2028"
+      YANXUN_THRESHOLD: "45"
+      YANXUN_CONCURRENCY: "4"
+      # YANXUN_PROXY: http://host.docker.internal:7890
+    volumes:
+      - ../data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>研讯 YanXun · 考研通知监控</title>
+<meta name="description" content="面向 2027/2028 考研的院校通知监控平台：多源采集、规则打分、交叉去重、质量复核，一条不漏。">
+<link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+
+<!-- ============ 导航 ============ -->
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#top">
+      <span class="brand-mark">研</span>
+      <span class="brand-name">研讯</span>
+      <span class="brand-en">YanXun</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#stream">通知流</a>
+      <a href="#precision">精度体系</a>
+      <a href="#deploy">部署</a>
+      <a href="/api/export.md">导出</a>
+    </nav>
+    <div class="nav-right">
+      <span class="nav-status"><i class="dot pulse"></i><span id="navState">监控运行中</span></span>
+      <button class="btn btn-ghost btn-sm" id="btnRunTop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v16l16-8z"/></svg>
+        立即采集
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ============ 首屏 ============ -->
+<section class="hero" id="top">
+  <div class="wrap">
+    <div class="hero-inner">
+      <div>
+        <div class="eyebrow reveal">Postgraduate Notice Monitor</div>
+        <h1 class="display reveal d1">把院校通知<br>变成一条<em>不漏的信号</em></h1>
+        <p class="hero-sub reveal d2">
+          覆盖 <b>22 个院校与机构</b>的研招栏目，按 {{ target_years }} 目标年份、
+          招生简章 / 专业目录 / 考试科目 / 复试调剂等主题做加权打分，
+          再经 URL 与标题双重去重后入库。低置信条目自动进入复核队列，而不是被直接丢弃。
+        </p>
+        <div class="hero-actions reveal d3">
+          <button class="btn btn-primary" id="btnRun">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v16l16-8z"/></svg>
+            开始采集
+          </button>
+          <a class="btn btn-ghost" href="#precision">看精度体系</a>
+        </div>
+        <div class="hero-note reveal d4">
+          <span><i></i>Python 3.10+ / conda pyy</span>
+          <span><i></i>零前端构建</span>
+          <span><i></i>MIT 开源</span>
+        </div>
+      </div>
+
+      <aside class="live-card reveal d2">
+        <div class="live-head">
+          <b>Live Monitor</b>
+          <span id="clock">--:--:--</span>
+        </div>
+        <div class="live-body">
+          <div class="live-row">
+            <span class="k">今日新增</span>
+            <span class="v" id="liveToday">0<small>条</small></span>
+          </div>
+          <div class="live-row">
+            <span class="k">页面成功</span>
+            <span class="v" id="livePages">0<small>/ 0</small></span>
+          </div>
+          <div class="live-row">
+            <span class="k">平均置信度</span>
+            <span class="v" id="liveScore">0<small>分</small></span>
+          </div>
+          <div class="live-row">
+            <span class="k">近 14 天入库</span>
+            <span class="spark" id="spark"></span>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 滚动条 ============ -->
+<div class="ticker">
+  <div class="ticker-inner">
+    <span class="ticker-label">LATEST</span>
+    <div class="ticker-view">
+      <div class="ticker-track" id="tickerTrack">
+        <span><i>·</i><b>正在载入最新命中通知…</b></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ KPI ============ -->
+<section class="kpis">
+  <div class="kpis-inner">
+    <div class="kpi">
+      <div class="kpi-label">累计通知</div>
+      <div class="kpi-value" id="kpiTotal">0</div>
+      <div class="kpi-delta">去重后入库条目</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">覆盖院校</div>
+      <div class="kpi-value" id="kpiSchools">0<small>/22</small></div>
+      <div class="kpi-delta">含研招网与教育部</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">待复核</div>
+      <div class="kpi-value" id="kpiReview">0</div>
+      <div class="kpi-delta">置信度低于 60 分</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">页面成功率</div>
+      <div class="kpi-value" id="kpiHealth">--<small>%</small></div>
+      <div class="kpi-delta" id="kpiHealthNote">尚未采集</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">命中率</div>
+      <div class="kpi-value" id="kpiHit">--<small>%</small></div>
+      <div class="kpi-delta">命中 / 解析候选</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 通知流 ============ -->
+<section class="section" id="stream">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Notice Stream</div>
+        <h2>通知流</h2>
+        <p>按发布日期倒序，分数即规则引擎给出的相关度。悬停条目可标记收藏或忽略。</p>
+      </div>
+      <div class="side">
+        <button class="btn btn-ghost btn-sm" id="btnExport">导出 Markdown</button>
+      </div>
+    </div>
+
+    <div class="work">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">最新命中 <span class="count" id="listCount">0</span></div>
+          <span style="font-size:11.5px;color:var(--gray-2)">阈值 {{ threshold }} 分</span>
+        </div>
+        <div class="filters">
+          <div class="search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="q" placeholder="搜索标题或院校" autocomplete="off">
+          </div>
+          <select class="select" id="schoolSel"><option value="">全部院校</option></select>
+          <div class="chips">
+            <button class="chip active" data-status="">全部</button>
+            <button class="chip" data-status="review">待复核</button>
+            <button class="chip" data-status="starred">已收藏</button>
+          </div>
+        </div>
+        <div class="list" id="list"><div class="empty">正在载入…</div></div>
+      </div>
+
+      <div class="side-stack">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">采集任务</div>
+            <span style="font-size:11px;color:var(--gray-2);font-family:var(--mono)" id="runId">IDLE</span>
+          </div>
+          <div class="run-body">
+            <div class="run-state">
+              <b id="runState">空闲</b>
+              <span id="runPct">0%</span>
+            </div>
+            <div class="progress"><i id="runBar"></i></div>
+            <div class="run-stats">
+              <div class="run-stat"><em>页面</em><b id="rsPages">0/0</b></div>
+              <div class="run-stat"><em>命中</em><b id="rsHits">0</b></div>
+              <div class="run-stat"><em>新增</em><b id="rsNew">0</b></div>
+            </div>
+            <button class="btn btn-primary" id="btnRunSide" style="width:100%">运行一次全量采集</button>
+            <div class="log" id="log" style="margin-top:14px">
+              <div>等待任务开始…</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">院校健康度</div>
+            <span style="font-size:11px;color:var(--gray-2)" id="healthNote">—</span>
+          </div>
+          <div class="src-list" id="srcList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 精度体系 ============ -->
+<section class="section alt" id="precision">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Precision System</div>
+        <h2>三层精度体系</h2>
+        <p>旧脚本把「标题里出现年份 + 命中关键词」当作唯一判据。研讯把它拆成三层，每一层都可解释、可回放、可调参。</p>
+      </div>
+    </div>
+
+    <div class="cards3">
+      <div class="feat">
+        <div class="feat-num">01 / SCORING</div>
+        <h3>加权打分，而不是布尔判断</h3>
+        <p>强词 30 分、中词 12 分、负向词扣分，年份冲突直接惩罚；日期从锚点所在行提取，标题没有年份也能命中。</p>
+        <ul>
+          <li>强词：招生简章 / 专业目录 / 考试大纲 / 改考</li>
+          <li>年份冲突与陈旧公告降权</li>
+          <li>每条输出命中理由，可回溯</li>
+        </ul>
+        <div class="metric"><b>{{ threshold }}</b><span>分默认阈值</span></div>
+      </div>
+
+      <div class="feat">
+        <div class="feat-num">02 / DEDUP</div>
+        <h3>URL 规范化 + SimHash 近似判重</h3>
+        <p>同一份教育部文件常被多校转载。先用规范化 URL 去精确重复，再用 64 位 SimHash 的汉明距离识别改写标题。</p>
+        <ul>
+          <li>剔除 utm / from / spm 追踪参数</li>
+          <li>index.htm 与目录页归一</li>
+          <li>跨院校重复只保留最早一条</li>
+        </ul>
+        <div class="metric"><b>≤3</b><span>汉明距离判重</span></div>
+      </div>
+
+      <div class="feat">
+        <div class="feat-num">03 / REVIEW</div>
+        <h3>低置信不丢弃，进复核队列</h3>
+        <p>45–59 分的条目不会写入正式清单，而是标记为「待复核」在页面集中呈现，一键收藏或忽略，判断结果反哺阈值。</p>
+        <ul>
+          <li>待复核与正式清单分离</li>
+          <li>收藏 / 忽略状态持久化</li>
+          <li>采集失败按类型归因（412 / 超时 / 重置）</li>
+        </ul>
+        <div class="metric"><b>0</b><span>静默丢弃</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 部署 ============ -->
+<section class="section" id="deploy">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Deploy</div>
+        <h2>三种方式，十分钟上线</h2>
+        <p>本地用 conda 环境跑，服务器用 Docker，仓库内置 GitHub Actions 做测试与镜像构建。</p>
+      </div>
+    </div>
+
+    <div class="deploy">
+      <div>
+        <ul class="deploy-steps">
+          <li><span class="n">01</span><div><b>克隆仓库</b><span>git clone 后进入项目根目录</span></div></li>
+          <li><span class="n">02</span><div><b>准备 conda 环境</b><span>一条命令创建并安装依赖，Windows 用 .bat 脚本</span></div></li>
+          <li><span class="n">03</span><div><b>启动服务</b><span>默认 127.0.0.1:8000，可用环境变量改端口</span></div></li>
+          <li><span class="n">04</span><div><b>接入定时任务</b><span>cron / 计划任务每天 20:00 自动采集一次</span></div></li>
+        </ul>
+      </div>
+
+      <div>
+        <div class="tabs" id="tabs">
+          <button class="tab active" data-tab="conda">conda</button>
+          <button class="tab" data-tab="docker">docker</button>
+          <button class="tab" data-tab="actions">GitHub Actions</button>
+        </div>
+        <pre class="code" id="codeBox"><span class="c"># 1. 克隆</span>
+git clone https://github.com/&lt;you&gt;/yanxun.git
+<span class="k">cd</span> yanxun
+
+<span class="c"># 2. 创建 conda 环境（已存在则跳过）</span>
+conda create -n pyy python=3.11 -y
+conda activate pyy
+pip install -r requirements.txt
+
+<span class="c"># 3. 启动</span>
+python run.py
+<span class="c"># -> http://127.0.0.1:8000</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 页脚 ============ -->
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <div class="brand" style="color:#fff">
+          <span class="brand-mark">研</span>
+          <span class="brand-name">研讯</span>
+        </div>
+        <p>面向考研的院校通知监控平台。开源、可自部署、采集结果可导出为 Markdown。</p>
+      </div>
+      <div>
+        <h4>产品</h4>
+        <ul>
+          <li><a href="#stream">通知流</a></li>
+          <li><a href="#precision">精度体系</a></li>
+          <li><a href="/api/export.md">导出 Markdown</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>开发</h4>
+        <ul>
+          <li><a href="#deploy">部署文档</a></li>
+          <li><a href="/api/overview">开放 API</a></li>
+          <li><a href="/api/health">健康检查</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>项目</h4>
+        <ul>
+          <li><a href="#top">MIT License</a></li>
+          <li><a href="#top">贡献指南</a></li>
+          <li><a href="#top">更新日志</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 YanXun · 数据来自各院校研招官网，仅作信息聚合</span>
+      <span>Built with Flask · No build step</span>
+    </div>
+  </div>
+</footer>
+
+<div class="toast" id="toast"></div>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

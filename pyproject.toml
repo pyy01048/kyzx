@@ -1,0 +1,17 @@
+[project]
+name = "yanxun"
+version = "0.1.0"
+description = "考研通知监控平台：多源采集、加权打分、双重去重"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
